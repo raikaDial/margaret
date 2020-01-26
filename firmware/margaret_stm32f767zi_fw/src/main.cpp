@@ -1,51 +1,100 @@
-#define STM32F767ZI // Define so rosserial switches to using ethernet
-
-#include <Arduino.h>
+#include <mbed.h>
 
 #include <ros.h>
-#include <sensor_msgs/IMU.h>
+#include <sensor_msgs/Imu.h>
 
-#include <Adafruit_BNO055.h>
+#include <EthernetInterface.h>
 
-ros::NodeHandle  nh;
+#include <BNO055.h>
 
-Adafruit_BNO055 bno = Adafruit_BNO055(-1, 0x28);
+// ***** Objects for ROS Communication ***** //
+ros::NodeHandle nh; // Main interface with ROS
+
 sensor_msgs::Imu bno055_imu_msg;
 ros::Publisher bno055_imu_pub("imu", &bno055_imu_msg);
+// ********** //
+
+// User LEDs for Debugging
+DigitalOut led1(LED1);
+DigitalOut led2(LED2);
+DigitalOut led3(LED3);
+
+Serial pc(USBTX,USBRX,921600);
+
+
+// ***** Setup BNO055 IMU ***** //
+// Pins for I2C communication and reset
+const PinName BNO055_SDA = PB_9;
+const PinName BNO055_SCL = PB_8;
+const PinName BNO055_RST = PE_13;
+
+// Create IMU object
+BNO055 imu(BNO055_SDA, BNO055_SCL, BNO055_RST, BNO055_G_CHIP_ADDR, MODE_IMU);
+
+BNO055_QUATERNION_TypeDef orientation; // Used to store the current orientation
+BNO055_GYRO_TypeDef angular_rates; // Stores the current angular velocity of the IMU
+BNO055_ACC_TypeDef acceleration; // Stores the current accelerometer data of the IMU
+
 uint32_t imu_messages_published = 0;
+Timer imu_data_publish_timer;
+// ********** //
 
-void setup()
+void publishIMUData()
 {
-  bno055_imu_msg.header.frame_id = "imu_link";
-  bno.begin(Adafruit_BNO055::OPERATION_MODE_IMUPLUS); // Connect to IMU
+    bno055_imu_msg.header.stamp = nh.now(); // Fetch data timestamp
 
-  nh.initNode();
-  nh.advertise(bno055_imu_pub);
+    imu.get_gyro(&angular_rates);
+    imu.get_acc(&acceleration);
+    imu.get_quaternion(&orientation);
+
+    bno055_imu_msg.linear_acceleration.x = acceleration.x;
+    bno055_imu_msg.linear_acceleration.y = acceleration.y;
+    bno055_imu_msg.linear_acceleration.z = acceleration.z;
+
+    bno055_imu_msg.angular_velocity.x = angular_rates.x;
+    bno055_imu_msg.angular_velocity.y = angular_rates.y;
+    bno055_imu_msg.angular_velocity.z = angular_rates.z;
+
+    bno055_imu_msg.orientation.x = orientation.x;
+    bno055_imu_msg.orientation.y = orientation.y;
+    bno055_imu_msg.orientation.z = orientation.z;
+    bno055_imu_msg.orientation.w = orientation.w;
+
+    bno055_imu_msg.header.seq = imu_messages_published++;
+    bno055_imu_pub.publish(&bno055_imu_msg);  
 }
 
-void loop()
+int main()
 {
-  bno055_imu_msg.header.stamp = nh.now(); // Fetch data timestamp
+    nh.initNode("192.168.1.5");
+    nh.advertise(bno055_imu_pub);
 
-  imu::Vector<3> acceleration = bno.getVector(Adafruit_BNO055::VECTOR_ACCELEROMETER);
-  imu::Vector<3> angular_rates = bno.getVector(Adafruit_BNO055::VECTOR_GYROSCOPE);
-  imu::Quaternion orientation = bno.getQuat();
+    // Periodically send messages over the socket.
+    Timer blink_timer;
+    blink_timer.reset();
+    blink_timer.start();
 
-  bno055_imu_msg.linear_acceleration.x = acceleration.x();
-  bno055_imu_msg.linear_acceleration.y = acceleration.y();
-  bno055_imu_msg.linear_acceleration.z = acceleration.z();
+    imu_data_publish_timer.reset();
+    imu_data_publish_timer.start();
 
-  bno055_imu_msg.angular_velocity.x = angular_rates.x();
-  bno055_imu_msg.angular_velocity.y = angular_rates.y();
-  bno055_imu_msg.angular_velocity.z = angular_rates.z();
+    __enable_irq();
 
-  bno055_imu_msg.orientation.x = orientation.x();
-  bno055_imu_msg.orientation.y = orientation.y();
-  bno055_imu_msg.orientation.z = orientation.z();
-  bno055_imu_msg.orientation.w = orientation.w();
+    while(1)
+    {
+      if(imu_data_publish_timer.read_us() >= 10000)
+      {
+        imu_data_publish_timer.reset();
+        publishIMUData();
+      }
 
-  bno055_imu_msg.header.seq = imu_messages_published++;
-  bno055_imu_pub.publish(&bno055_imu_msg);
-  nh.spinOnce();
-  delay(10);
+      if(blink_timer.read_ms() > 500)
+      {
+          led1 = !led1;
+          blink_timer.reset();
+
+          pc.printf("Ros node connected to master? %d\n", nh.connected());
+      }
+
+      nh.spinOnce();
+    }
 }
