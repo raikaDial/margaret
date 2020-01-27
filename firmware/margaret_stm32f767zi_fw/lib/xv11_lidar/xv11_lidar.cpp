@@ -26,17 +26,11 @@ Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, int ID)
     m_laserscan_ready = 0;
     m_laserscan_start = 1;
 
-    // Configure static values in LaserScan message.
-    char buff[32];
-    sprintf(buff, "laser_link_%d", m_ID);
-    m_laserscan_msg.header.frame_id = "laser_link"; //buff;
-    m_laserscan_msg.angle_increment = 3.14159265359/180.0;
-    m_laserscan_msg.range_min = 0.02;
-    m_laserscan_msg.range_max = 6.0;
-    m_laserscan_msg.ranges_length = NUM_VALS_LASERSCAN;
-    m_laserscan_msg.intensities_length = NUM_VALS_LASERSCAN;
-    m_laserscan_msg.ranges = new float[NUM_VALS_LASERSCAN];
-    m_laserscan_msg.intensities = new float[NUM_VALS_LASERSCAN];
+    // Allocate array for raw laserscan message.
+    // Array format is [timestamp secs (4 bytes)][timestamp nsecs (4 bytes)][seq # (4 bytes)][starting angle (2 bytes)]
+    //  [avg motor rpm (4 bytes)][distance meas (2*NUM_VALS_LASERSCAN bytes)][intensity meas (2*NUM_VALS_LASERSCAN bytes)]
+    m_laserscan_raw_msg.data_length = 2*NUM_VALS_LASERSCAN+9;
+    m_laserscan_raw_msg.data = new uint16_t[m_laserscan_raw_msg.data_length];
 
     // Start looking for the start of the packet
     m_lidar_serial.attach(this, &Xv11Lidar::rxISR, Serial::RxIrq);
@@ -44,12 +38,6 @@ Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, int ID)
 
 void Xv11Lidar::begin()
 {
-    // Initialize ROS publisher
-    // char buff[32];
-    // sprintf(buff, "scan_%d", m_ID);
-    // m_laserscan_pub = new ros::Publisher(buff, &m_laserscan_msg);
-    // nh.advertise(*m_laserscan_pub);
-
     // Initialize Motor PWM
     m_motor_pwm.period(1/32768.0f); // 32.768 kHz pwm frequency
     m_motor_pwm.write(0.70f); // start with 70% duty cycle
@@ -70,18 +58,14 @@ void Xv11Lidar::update() {
         if(validatePacket())
         {
             // Get current device angle
-            int current_angle = (m_packet_full[OFFSET_TO_INDEX] - INDEX_LOW)*N_DATA_QUADS;
+            uint16_t current_angle = (m_packet_full[OFFSET_TO_INDEX] - INDEX_LOW)*N_DATA_QUADS;
         
             // Store starting angle and timestamp if start of new data collection cycle
             if(m_laserscan_start) 
             {
-                //pc.printf("New scan");
-                // Store starting angle and starting timestamp
-                m_laserscan_msg.header.stamp = nh.now();
-                m_laserscan_msg.angle_min = (float) current_angle*M_PI/180.0;
-                m_laserscan_msg.angle_max = (float) ((current_angle + NUM_VALS_LASERSCAN-1)%360)*M_PI/180.0;
                 m_starting_angle = current_angle;
                 m_laserscan_start = 0;
+                storeLaserscanPacketHeader();
             }
 
             // Calculate the speed of the motor. Value reported by Neato LIDAR is RPM*64.
@@ -113,11 +97,9 @@ void Xv11Lidar::update() {
                 publishLaserScan();
 
                 // Create new laserscan with current packet.
-                m_laserscan_msg.header.stamp = nh.now();
-                m_laserscan_msg.angle_min = (float) current_angle*M_PI/180.0;
-                m_laserscan_msg.angle_max = (float) ((current_angle + NUM_VALS_LASERSCAN-1)%360)*M_PI/180.0;
                 m_starting_angle = current_angle;
                 m_laserscan_start = 0;
+                storeLaserscanPacketHeader();
             }
             else
             {
@@ -135,7 +117,7 @@ void Xv11Lidar::update() {
                 {
                     uint16_t distance, intensity;
                     processData(i, distance, intensity);
-                    m_ranges[m_laserscan_idx] = distance/1000.0;
+                    m_ranges[m_laserscan_idx] = distance;
                     m_intensities[m_laserscan_idx] = intensity;
                     
                     ++m_laserscan_idx;
@@ -218,26 +200,25 @@ void Xv11Lidar::processData(uint16_t num_quad, uint16_t & distance, uint16_t & i
 
 void Xv11Lidar::publishLaserScan()
 {
+    // Compute average motor RPM and store in array
     float motor_rpm_avg = m_motor_rpm_sum/m_num_good_readings;
-    m_motor_rpm_sum = 0;
-    m_num_good_readings = 0;
-    if(motor_rpm_avg != 0)
-    {
-        m_laserscan_msg.time_increment = 1.0/(motor_rpm_avg*6); // 1/(revs/sec * 360 meas/rev)
-    }
-
-    m_laserscan_msg.header.seq = m_num_scans_rxd++;
+    m_motor_rpm_sum=0;
+    m_num_good_readings=0;
+    uint32_t motor_rpm_avg_bytes = *reinterpret_cast<uint32_t*>(&motor_rpm_avg);
+    m_laserscan_raw_msg.data[8] = (uint16_t) (motor_rpm_avg_bytes >> 16);
+    m_laserscan_raw_msg.data[9] = (uint16_t) (0xFFFF & motor_rpm_avg_bytes);
 
     // Copy ranges and intensities to message
     for(int i=0; i<NUM_VALS_LASERSCAN; ++i)
     {
-        m_laserscan_msg.ranges[i] = m_ranges[i];
-        m_laserscan_msg.intensities[i] = m_intensities[i];
+        m_laserscan_raw_msg.data[10+i] = m_ranges[i];
+        m_laserscan_raw_msg.data[10+NUM_VALS_LASERSCAN+i] = m_intensities[i];
     }
 
     m_laserscan_idx = 0;
     m_laserscan_start = 1;
     m_laserscan_ready = 1;
+    m_num_scans_rxd++;
     //pc.printf("Laserscan published.");
 }
 
@@ -272,4 +253,17 @@ void Xv11Lidar::rxISR(void)
             m_packet_ready = 1;
         }
     }
+}
+
+void Xv11Lidar::storeLaserscanPacketHeader()
+{
+    ros::Time timestamp = nh.now();
+    m_laserscan_raw_msg.data[0] = (uint16_t) (timestamp.sec >> 16);
+    m_laserscan_raw_msg.data[1] = (uint16_t) (0xFFFF & timestamp.sec);
+    m_laserscan_raw_msg.data[2] = (uint16_t) (timestamp.nsec >> 16);
+    m_laserscan_raw_msg.data[3] = (uint16_t) (0xFFFF & timestamp.nsec);
+    m_laserscan_raw_msg.data[4] = (uint16_t) (m_num_scans_rxd >> 16);
+    m_laserscan_raw_msg.data[5] = (uint16_t) (0xFFFF & m_num_scans_rxd);
+    m_laserscan_raw_msg.data[6] = (uint16_t) (m_starting_angle >> 16);
+    m_laserscan_raw_msg.data[7] = (uint16_t) (0xFFFF & m_starting_angle);
 }

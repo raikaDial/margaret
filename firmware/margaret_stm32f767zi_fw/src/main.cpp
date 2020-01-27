@@ -9,16 +9,13 @@
 #include <mbed.h>
 
 #include <ros.h>
-#include <sensor_msgs/Imu.h>
+#include <std_msgs/Float32MultiArray.h>
 
 #include <BNO055.h>
 #include <xv11_lidar.h>
 
 // ***** Objects for ROS Communication ***** //
 ros::NodeHandle nh; // Main interface with ROS
-
-sensor_msgs::Imu bno055_imu_msg;
-ros::Publisher bno055_imu_pub("imu", &bno055_imu_msg);
 // ********** //
 
 // User LEDs for Debugging
@@ -43,6 +40,9 @@ BNO055_ACC_TypeDef acceleration; // Stores the current accelerometer data of the
 
 uint32_t imu_messages_published = 0;
 Timer imu_data_publish_timer;
+
+std_msgs::Float32MultiArray bno055_raw_imu_msg;
+ros::Publisher bno055_raw_imu_pub("imu_raw", &bno055_raw_imu_msg);
 // ********** //
 
 // ***** Dynamixel Configuration and Object Containers ***** //
@@ -56,27 +56,33 @@ static const PinName AX12_TX_EN = PF_15;
 ///////////////////////////////////////////////////////////////////////////
 void publishIMUData()
 {
-    bno055_imu_msg.header.stamp = nh.now(); // Fetch data timestamp
+    ros::Time timestamp = nh.now(); // Fetch data timestamp
 
     imu.get_gyro(&angular_rates);
     imu.get_acc(&acceleration);
     imu.get_quaternion(&orientation);
 
-    bno055_imu_msg.linear_acceleration.x = acceleration.x;
-    bno055_imu_msg.linear_acceleration.y = acceleration.y;
-    bno055_imu_msg.linear_acceleration.z = acceleration.z;
+    bno055_raw_imu_msg.data[0] = *reinterpret_cast<float*>(&timestamp.sec);
+    bno055_raw_imu_msg.data[1] = *reinterpret_cast<float*>(&timestamp.nsec);
+    bno055_raw_imu_msg.data[2] = *reinterpret_cast<float*>(&imu_messages_published);
 
-    bno055_imu_msg.angular_velocity.x = angular_rates.x;
-    bno055_imu_msg.angular_velocity.y = angular_rates.y;
-    bno055_imu_msg.angular_velocity.z = angular_rates.z;
 
-    bno055_imu_msg.orientation.x = orientation.x;
-    bno055_imu_msg.orientation.y = orientation.y;
-    bno055_imu_msg.orientation.z = orientation.z;
-    bno055_imu_msg.orientation.w = orientation.w;
+    bno055_raw_imu_msg.data[3] = acceleration.x;
+    bno055_raw_imu_msg.data[4] = acceleration.y;
+    bno055_raw_imu_msg.data[5] = acceleration.z;
 
-    bno055_imu_msg.header.seq = imu_messages_published++;
-    bno055_imu_pub.publish(&bno055_imu_msg);  
+    bno055_raw_imu_msg.data[6] = angular_rates.x;
+    bno055_raw_imu_msg.data[7] = angular_rates.y;
+    bno055_raw_imu_msg.data[8] = angular_rates.z;
+
+    bno055_raw_imu_msg.data[9] = orientation.x;
+    bno055_raw_imu_msg.data[10] = orientation.y;
+    bno055_raw_imu_msg.data[11] = orientation.z;
+    bno055_raw_imu_msg.data[12] = orientation.w;
+
+    bno055_raw_imu_pub.publish(&bno055_raw_imu_msg);
+
+    imu_messages_published++;
 }
 
 // ***** XV11 Lidar Configuration and Object Containers ***** //
@@ -94,14 +100,18 @@ const PinName XV11_LIDAR_2_PWM = PE_6; // PWM9/2
 Xv11Lidar xv11_lidar_1(XV11_LIDAR_1_TX, XV11_LIDAR_1_RX, XV11_LIDAR_1_PWM, 1);
 Xv11Lidar xv11_lidar_2(XV11_LIDAR_2_TX, XV11_LIDAR_2_RX, XV11_LIDAR_2_PWM, 2);
 
-ros::Publisher xv11_laserscan_pub_1("scan_1", &xv11_lidar_1.m_laserscan_msg);
-ros::Publisher xv11_laserscan_pub_2("scan_2", &xv11_lidar_2.m_laserscan_msg);
+ros::Publisher xv11_laserscan_pub_1("scan_raw_1", &xv11_lidar_1.m_laserscan_raw_msg);
+ros::Publisher xv11_laserscan_pub_2("scan_raw_2", &xv11_lidar_2.m_laserscan_raw_msg);
 // *********** //
 
 int main()
 {
     nh.initNode("192.168.1.5");
-    nh.advertise(bno055_imu_pub);
+
+    bno055_raw_imu_msg.data_length = 13;
+    bno055_raw_imu_msg.data = new float[bno055_raw_imu_msg.data_length];
+    nh.advertise(bno055_raw_imu_pub);
+
     nh.advertise(xv11_laserscan_pub_1);
     nh.advertise(xv11_laserscan_pub_2);
 
@@ -124,22 +134,20 @@ int main()
         if(imu_data_publish_timer.read_us() >= 10000)
         {
             imu_data_publish_timer.reset();
-            // publishIMUData();
+            publishIMUData();
         }
 
         xv11_lidar_1.update();
         if(xv11_lidar_1.m_laserscan_ready)
         {
-            pc.printf("New LaserScan 1\n");
-            xv11_laserscan_pub_1.publish(&xv11_lidar_1.m_laserscan_msg);
+            xv11_laserscan_pub_1.publish(&xv11_lidar_1.m_laserscan_raw_msg);
             xv11_lidar_1.m_laserscan_ready = 0;
         }
         xv11_lidar_2.update();
         if(xv11_lidar_2.m_laserscan_ready)
         {
-            //pc.printf("New LaserScan 2\n");
             led3 = !led3;
-            xv11_laserscan_pub_2.publish(&xv11_lidar_2.m_laserscan_msg);
+            xv11_laserscan_pub_2.publish(&xv11_lidar_2.m_laserscan_raw_msg);
             xv11_lidar_2.m_laserscan_ready = 0;
         }
 

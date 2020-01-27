@@ -18,14 +18,14 @@
 // ***** Begin Includes ***** //
 #include <mbed.h>
 #include <ros.h>
-#include <sensor_msgs/LaserScan.h>
+#include <std_msgs/UInt16MultiArray.h>
 #include <PID.h>
 // ********** //
 
 extern ros::NodeHandle nh;
 
 // Number of measurements per LaserScan packet. Must be a multiple of N_DATA_QUADS.
-const int NUM_VALS_LASERSCAN = 360; //360;
+const int NUM_VALS_LASERSCAN = 48; //360;
 
 extern ros::NodeHandle nh;
 
@@ -88,7 +88,7 @@ class Xv11Lidar {
         void update(); // Compiles LaserScan packets.
         
         // Used for sending the lidar's data to the pc
-        sensor_msgs::LaserScan m_laserscan_msg;
+        std_msgs::UInt16MultiArray m_laserscan_raw_msg;
         int m_laserscan_idx;
         uint8_t m_laserscan_ready;
         uint8_t m_laserscan_start;
@@ -105,10 +105,10 @@ class Xv11Lidar {
         uint8_t m_packet_idx; // Current position in incomplete packet.
         uint8_t m_packet_full[PACKET_LENGTH]; // Stores the most recent complete packet received.
         uint8_t m_packet_ready; // Signals that a new packet is ready for processing.
-        int m_starting_angle; // Angle of the device at the start of the current data collection cycle
+        uint16_t m_starting_angle; // Angle of the device at the start of the current data collection cycle
         uint32_t m_num_scans_rxd;
-        float m_ranges[NUM_VALS_LASERSCAN];
-        float m_intensities[NUM_VALS_LASERSCAN];
+        uint16_t m_ranges[NUM_VALS_LASERSCAN];
+        uint16_t m_intensities[NUM_VALS_LASERSCAN];
         // ********** //
         
         // ***** PID Controller Configuration ***** //
@@ -123,9 +123,6 @@ class Xv11Lidar {
         double m_motor_rpm;
         float m_motor_rpm_sum; // Cumulative sum of motor rpm, for calculating average for estimating motion of points.
         int m_num_good_readings;
-
-        // Variables for ROS Publishing
-        ros::Publisher* m_laserscan_pub;
     
         void rxISR(void); // Builds lidar packets
 
@@ -133,6 +130,7 @@ class Xv11Lidar {
         uint8_t validatePacket();
         void processData(uint16_t num_quad, uint16_t & distance, uint16_t & intensity);
         void publishLaserScan();
+        void storeLaserscanPacketHeader();
         
 }; // end class Xv11Lidar
 
