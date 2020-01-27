@@ -1,11 +1,18 @@
+///////////////////////////////////////////////////////////////////////////
+/// @file main.cpp
+/// @brief Main file for Margaret STM32F767ZI firmware
+///
+/// @author Ryker Dial
+/// @date Jan. 26, 2020
+///////////////////////////////////////////////////////////////////////////
+
 #include <mbed.h>
 
 #include <ros.h>
 #include <sensor_msgs/Imu.h>
 
-#include <EthernetInterface.h>
-
 #include <BNO055.h>
+#include <xv11_lidar.h>
 
 // ***** Objects for ROS Communication ***** //
 ros::NodeHandle nh; // Main interface with ROS
@@ -20,7 +27,6 @@ DigitalOut led2(LED2);
 DigitalOut led3(LED3);
 
 Serial pc(USBTX,USBRX,921600);
-
 
 // ***** Setup BNO055 IMU ***** //
 // Pins for I2C communication and reset
@@ -39,6 +45,15 @@ uint32_t imu_messages_published = 0;
 Timer imu_data_publish_timer;
 // ********** //
 
+// ***** Dynamixel Configuration and Object Containers ***** //
+static const PinName AX12_TX = PD_5;
+static const PinName AX12_RX = PD_6;
+static const PinName AX12_TX_EN = PF_15;
+// ********** //
+
+///////////////////////////////////////////////////////////////////////////
+/// @brief Read IMU data over I2C and publish it.
+///////////////////////////////////////////////////////////////////////////
 void publishIMUData()
 {
     bno055_imu_msg.header.stamp = nh.now(); // Fetch data timestamp
@@ -64,10 +79,35 @@ void publishIMUData()
     bno055_imu_pub.publish(&bno055_imu_msg);  
 }
 
+// ***** XV11 Lidar Configuration and Object Containers ***** //
+
+// Lidar Module 1
+const PinName XV11_LIDAR_1_TX = PC_12; // TX5
+const PinName XV11_LIDAR_1_RX = PD_2; // RX5
+const PinName XV11_LIDAR_1_PWM = PE_5; // PWM9/1
+
+// Lidar Module 2
+const PinName XV11_LIDAR_2_TX = PE_8; // TX7
+const PinName XV11_LIDAR_2_RX = PE_7; // RX7
+const PinName XV11_LIDAR_2_PWM = PE_6; // PWM9/2
+
+Xv11Lidar xv11_lidar_1(XV11_LIDAR_1_TX, XV11_LIDAR_1_RX, XV11_LIDAR_1_PWM, 1);
+Xv11Lidar xv11_lidar_2(XV11_LIDAR_2_TX, XV11_LIDAR_2_RX, XV11_LIDAR_2_PWM, 2);
+
+ros::Publisher xv11_laserscan_pub_1("scan_1", &xv11_lidar_1.m_laserscan_msg);
+ros::Publisher xv11_laserscan_pub_2("scan_2", &xv11_lidar_2.m_laserscan_msg);
+// *********** //
+
 int main()
 {
     nh.initNode("192.168.1.5");
     nh.advertise(bno055_imu_pub);
+    nh.advertise(xv11_laserscan_pub_1);
+    nh.advertise(xv11_laserscan_pub_2);
+
+    // Spin up the LIDARs.
+    xv11_lidar_1.begin();
+    xv11_lidar_2.begin();
 
     // Periodically send messages over the socket.
     Timer blink_timer;
@@ -81,19 +121,35 @@ int main()
 
     while(1)
     {
-      if(imu_data_publish_timer.read_us() >= 10000)
-      {
-        imu_data_publish_timer.reset();
-        publishIMUData();
-      }
+        if(imu_data_publish_timer.read_us() >= 10000)
+        {
+            imu_data_publish_timer.reset();
+            // publishIMUData();
+        }
 
-      if(blink_timer.read_ms() > 500)
-      {
-          led1 = !led1;
-          blink_timer.reset();
+        xv11_lidar_1.update();
+        if(xv11_lidar_1.m_laserscan_ready)
+        {
+            pc.printf("New LaserScan 1\n");
+            xv11_laserscan_pub_1.publish(&xv11_lidar_1.m_laserscan_msg);
+            xv11_lidar_1.m_laserscan_ready = 0;
+        }
+        xv11_lidar_2.update();
+        if(xv11_lidar_2.m_laserscan_ready)
+        {
+            //pc.printf("New LaserScan 2\n");
+            led3 = !led3;
+            xv11_laserscan_pub_2.publish(&xv11_lidar_2.m_laserscan_msg);
+            xv11_lidar_2.m_laserscan_ready = 0;
+        }
 
-          pc.printf("Ros node connected to master? %d\n", nh.connected());
-      }
+    if(blink_timer.read_ms() > 500)
+    {
+        led1 = !led1;
+        blink_timer.reset();
+
+        //pc.printf("Ros node connected to master? %d\n", nh.connected());
+    }
 
       nh.spinOnce();
     }
