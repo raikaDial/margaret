@@ -101,6 +101,12 @@ typedef struct {
     double x;
     double y;
     double z;
+} BNO055_MAG_TypeDef;
+
+typedef struct {
+    double x;
+    double y;
+    double z;
 } BNO055_LIN_ACC_TypeDef;
 
 typedef struct {
@@ -121,6 +127,19 @@ typedef struct {
     uint8_t acc_radius[2];
     uint8_t mag_radius[2];
 } BNO055_CALIBRATION_TypeDef;
+
+typedef struct {
+    uint16_t x;
+    uint16_t y;
+    uint16_t z;
+} BNO055_UINT16_VEC3_TypeDef;
+
+typedef struct {
+    uint16_t x;
+    uint16_t y;
+    uint16_t z;
+    uint16_t w;
+} BNO055_UINT16_VEC4_TypeDef;
 
 enum {MT_P0 = 0, MT_P1, MT_P2, MT_P3, MT_P4, MT_P5, MT_P6, MT_P7};
 
@@ -192,17 +211,17 @@ public:
     /** Get Quaternion XYZ&W
      * @param int16_t type of 4D data address
      */
-    void get_quaternion(BNO055_QUATERNION_TypeDef *qua);
+    void get_quaternion(BNO055_UINT16_VEC4_TypeDef *raw);
 
     /** Get accelerometer data
     * @param double type of 3D data address
     */
-    void get_acc(BNO055_ACC_TypeDef *acc);
+    void get_acc(BNO055_UINT16_VEC4_TypeDef *raw);
 
     /** Get angular velocity data
     * @param double type of 3D data address
     */
-    void get_gyro(BNO055_GYRO_TypeDef *gyr);
+    void get_gyro(BNO055_UINT16_VEC4_TypeDef *raw);
 
     /** Get Linear accel data
      * @param double type of 3D data address
@@ -213,6 +232,11 @@ public:
      * @param double type of 3D data address
      */
     void get_gravity(BNO055_GRAVITY_TypeDef *gr);
+
+    /** Get gyro, accel, and fused quaternion data all at once
+     * @param double type of 3D data address
+     */ 
+    void get_imu_data(BNO055_UINT16_VEC3_TypeDef & acc, BNO055_UINT16_VEC3_TypeDef & gyr, BNO055_UINT16_VEC4_TypeDef & quat);
 
     /** Get Chip temperature data both Acc & Gyro
      * @param int8_t type of data address

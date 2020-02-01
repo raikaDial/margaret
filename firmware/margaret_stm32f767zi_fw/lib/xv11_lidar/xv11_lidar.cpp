@@ -10,7 +10,7 @@
 extern Serial pc;
 
 
-Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, int ID)
+Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, uint8_t ID)
     : m_ID(ID), m_lidar_serial(tx, rx, XV11_LIDAR_BAUD), m_motor_pwm(pwm), m_state(STATE_FIND_COMMAND), m_packet_idx(0), m_packet_ready(0), m_num_scans_rxd(0),
       m_Kp(1.0f), m_Ti(0.5f), m_Td(0.0f), m_pid_loop_rate(0.002f), m_motor_rpm_goal(310.0f), m_motor_rpm_min(305.0f), m_motor_rpm_max(315.0f),
       m_motor_pwm_min(0.4f), m_motor_pwm_max(1.0f), m_motor_controller(m_Kp, m_Ti, m_Td, m_pid_loop_rate), m_motor_rpm_sum(0.0f), m_num_good_readings(0)
@@ -77,7 +77,11 @@ void Xv11Lidar::update() {
             
             // Update the PID controller
             m_motor_controller.setProcessValue(m_motor_rpm);
-            m_motor_pwm.write(m_motor_controller.compute());
+            float pwm = m_motor_controller.compute();
+            // if(m_ID == 1)
+            //     pc.printf("ID: %d, RPM: %f, PWM: %f\n", m_ID, m_motor_rpm, pwm);
+            m_motor_pwm.write(pwm);
+            //m_motor_pwm.write(m_motor_controller.compute());
 
             // Determine the index of the current data
             //pc.printf("Curr: %d start: %d\n", current_angle, m_starting_angle);
@@ -251,6 +255,7 @@ void Xv11Lidar::rxISR(void)
             m_state = STATE_FIND_COMMAND;
 
             m_packet_ready = 1;
+            event_flags.set(1UL<<(m_ID-1));
         }
     }
 }

@@ -9,7 +9,7 @@
 #include <mbed.h>
 
 #include <ros.h>
-#include <std_msgs/Float32MultiArray.h>
+#include <std_msgs/UInt8MultiArray.h>
 
 #include <BNO055.h>
 #include <xv11_lidar.h>
@@ -24,6 +24,7 @@ DigitalOut led2(LED2);
 DigitalOut led3(LED3);
 
 Serial pc(USBTX,USBRX,921600);
+EventFlags event_flags;
 
 // ***** Setup BNO055 IMU ***** //
 // Pins for I2C communication and reset
@@ -41,7 +42,7 @@ BNO055_ACC_TypeDef acceleration; // Stores the current accelerometer data of the
 uint32_t imu_messages_published = 0;
 Timer imu_data_publish_timer;
 
-std_msgs::Float32MultiArray bno055_raw_imu_msg;
+std_msgs::UInt8MultiArray bno055_raw_imu_msg;
 ros::Publisher bno055_raw_imu_pub("imu_raw", &bno055_raw_imu_msg);
 // ********** //
 
@@ -58,31 +59,59 @@ void publishIMUData()
 {
     ros::Time timestamp = nh.now(); // Fetch data timestamp
 
-    imu.get_gyro(&angular_rates);
-    imu.get_acc(&acceleration);
-    imu.get_quaternion(&orientation);
+    BNO055_UINT16_VEC3_TypeDef angular_rates;
+    BNO055_UINT16_VEC3_TypeDef acceleration;
+    BNO055_UINT16_VEC4_TypeDef orientation;
 
-    bno055_raw_imu_msg.data[0] = *reinterpret_cast<float*>(&timestamp.sec);
-    bno055_raw_imu_msg.data[1] = *reinterpret_cast<float*>(&timestamp.nsec);
-    bno055_raw_imu_msg.data[2] = *reinterpret_cast<float*>(&imu_messages_published);
+    imu.get_imu_data(acceleration, angular_rates, orientation);
 
+    // Store header info (timestamp and sequence no.)
+    for(int i=0; i<4; ++i)
+    {
+        bno055_raw_imu_msg.data[3-i] = 0xFF & (timestamp.sec >> 8*i);
+    }
+    for(int i=0; i<4; ++i)
+    {
+        bno055_raw_imu_msg.data[7-i] = 0xFF & (timestamp.nsec >> 8*i);
+    }
+    for(int i=0; i<4; ++i)
+    {
+        bno055_raw_imu_msg.data[11-i] = 0xFF & (imu_messages_published >> 8*i);
+    }
+    // Store accelerations
+    bno055_raw_imu_msg.data[12] = 0xFF & (acceleration.x >> 8);
+    bno055_raw_imu_msg.data[13] = 0xFF & acceleration.x;
+    bno055_raw_imu_msg.data[14] = 0xFF & (acceleration.y >> 8);
+    bno055_raw_imu_msg.data[15] = 0xFF & acceleration.y;
+    bno055_raw_imu_msg.data[16] = 0xFF & (acceleration.z >> 8);
+    bno055_raw_imu_msg.data[17] = 0xFF & acceleration.z;
 
-    bno055_raw_imu_msg.data[3] = acceleration.x;
-    bno055_raw_imu_msg.data[4] = acceleration.y;
-    bno055_raw_imu_msg.data[5] = acceleration.z;
+    // Store angular rates
+    bno055_raw_imu_msg.data[18] = 0xFF & (angular_rates.x >> 8);
+    bno055_raw_imu_msg.data[19] = 0xFF & angular_rates.x;
+    bno055_raw_imu_msg.data[20] = 0xFF & (angular_rates.y >> 8);
+    bno055_raw_imu_msg.data[21] = 0xFF & angular_rates.y;
+    bno055_raw_imu_msg.data[22] = 0xFF & (angular_rates.z >> 8);
+    bno055_raw_imu_msg.data[23] = 0xFF & angular_rates.z;
 
-    bno055_raw_imu_msg.data[6] = angular_rates.x;
-    bno055_raw_imu_msg.data[7] = angular_rates.y;
-    bno055_raw_imu_msg.data[8] = angular_rates.z;
-
-    bno055_raw_imu_msg.data[9] = orientation.x;
-    bno055_raw_imu_msg.data[10] = orientation.y;
-    bno055_raw_imu_msg.data[11] = orientation.z;
-    bno055_raw_imu_msg.data[12] = orientation.w;
+    // Store orientation
+    bno055_raw_imu_msg.data[24] = 0xFF & (orientation.x >> 8);
+    bno055_raw_imu_msg.data[25] = 0xFF & orientation.x;
+    bno055_raw_imu_msg.data[26] = 0xFF & (orientation.y >> 8);
+    bno055_raw_imu_msg.data[27] = 0xFF & orientation.y;
+    bno055_raw_imu_msg.data[28] = 0xFF & (orientation.z >> 8);
+    bno055_raw_imu_msg.data[29] = 0xFF & orientation.z;
+    bno055_raw_imu_msg.data[30] = 0xFF & (orientation.w >> 8);
+    bno055_raw_imu_msg.data[31] = 0xFF & orientation.w;
 
     bno055_raw_imu_pub.publish(&bno055_raw_imu_msg);
 
     imu_messages_published++;
+}
+
+void publishIMUDataTickerCallback()
+{
+    event_flags.set(1UL<<2);
 }
 
 // ***** XV11 Lidar Configuration and Object Containers ***** //
@@ -108,8 +137,8 @@ int main()
 {
     nh.initNode("192.168.1.5");
 
-    bno055_raw_imu_msg.data_length = 13;
-    bno055_raw_imu_msg.data = new float[bno055_raw_imu_msg.data_length];
+    bno055_raw_imu_msg.data_length = 32;
+    bno055_raw_imu_msg.data = new uint8_t[bno055_raw_imu_msg.data_length];
     nh.advertise(bno055_raw_imu_pub);
 
     nh.advertise(xv11_laserscan_pub_1);
@@ -124,41 +153,47 @@ int main()
     blink_timer.reset();
     blink_timer.start();
 
-    imu_data_publish_timer.reset();
-    imu_data_publish_timer.start();
+    Ticker imu_data_publish_ticker;
+    imu_data_publish_ticker.attach_us(publishIMUDataTickerCallback, 10000);
 
     __enable_irq();
 
     while(1)
     {
-        if(imu_data_publish_timer.read_us() >= 10000)
+        event_flags.wait_any(1UL, osWaitForever, false);
+
+        if(event_flags.get() & 1UL)
         {
-            imu_data_publish_timer.reset();
+            xv11_lidar_1.update();
+            if(xv11_lidar_1.m_laserscan_ready)
+            {
+                xv11_laserscan_pub_1.publish(&xv11_lidar_1.m_laserscan_raw_msg);
+                xv11_lidar_1.m_laserscan_ready = 0;
+            }
+            event_flags.clear(1UL); 
+        }
+
+        if(event_flags.get() & (1UL<<1))
+        {
+            xv11_lidar_2.update();
+            if(xv11_lidar_2.m_laserscan_ready)
+            {
+                xv11_laserscan_pub_2.publish(&xv11_lidar_2.m_laserscan_raw_msg);
+                xv11_lidar_2.m_laserscan_ready = 0;
+            }
+            event_flags.clear(1UL<<1); 
+        }
+
+        if(event_flags.get() & (1UL<<2))
+        {
+            ros::Time start = nh.now();
             publishIMUData();
+            ros::Time end = nh.now();
+            pc.printf("IMU read took %f s\n", end.toSec()-start.toSec());
+
+            event_flags.clear(1UL<<2);
         }
 
-        xv11_lidar_1.update();
-        if(xv11_lidar_1.m_laserscan_ready)
-        {
-            xv11_laserscan_pub_1.publish(&xv11_lidar_1.m_laserscan_raw_msg);
-            xv11_lidar_1.m_laserscan_ready = 0;
-        }
-        xv11_lidar_2.update();
-        if(xv11_lidar_2.m_laserscan_ready)
-        {
-            led3 = !led3;
-            xv11_laserscan_pub_2.publish(&xv11_lidar_2.m_laserscan_raw_msg);
-            xv11_lidar_2.m_laserscan_ready = 0;
-        }
-
-    if(blink_timer.read_ms() > 500)
-    {
-        led1 = !led1;
-        blink_timer.reset();
-
-        //pc.printf("Ros node connected to master? %d\n", nh.connected());
-    }
-
-      nh.spinOnce();
+        nh.spinOnce();
     }
 }

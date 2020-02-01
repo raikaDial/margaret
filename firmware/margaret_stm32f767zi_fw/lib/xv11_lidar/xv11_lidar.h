@@ -23,9 +23,10 @@
 // ********** //
 
 extern ros::NodeHandle nh;
+extern EventFlags event_flags;
 
 // Number of measurements per LaserScan packet. Must be a multiple of N_DATA_QUADS.
-const int NUM_VALS_LASERSCAN = 48; //360;
+const int NUM_VALS_LASERSCAN = 24; //360;
 
 extern ros::NodeHandle nh;
 
@@ -82,7 +83,7 @@ const uint8_t STATE_BUILD_PACKET = STATE_FIND_COMMAND + 1; // 2nd state: build t
 class Xv11Lidar {
     public:
         // Constructor takes tx and rx pins for communication with xv11 lidar and a pin for pwm control of the lidar's motor
-        Xv11Lidar(PinName tx, PinName rx, PinName pwm, int ID);
+        Xv11Lidar(PinName tx, PinName rx, PinName pwm, uint8_t ID);
         
         void begin();
         void update(); // Compiles LaserScan packets.
@@ -94,7 +95,7 @@ class Xv11Lidar {
         uint8_t m_laserscan_start;
         
     private:
-        int m_ID; // ID of this LIDAR. Used to specify frame name.
+        uint8_t m_ID; // ID of this LIDAR. Used to specify frame name.
 
         RawSerial m_lidar_serial;
         PwmOut m_motor_pwm;
@@ -123,7 +124,7 @@ class Xv11Lidar {
         double m_motor_rpm;
         float m_motor_rpm_sum; // Cumulative sum of motor rpm, for calculating average for estimating motion of points.
         int m_num_good_readings;
-    
+
         void rxISR(void); // Builds lidar packets
 
         // Helper functions for processing lidar packets.

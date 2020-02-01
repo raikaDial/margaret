@@ -83,7 +83,7 @@ void BNO055::get_Euler_Angles(BNO055_EULER_TypeDef *el)
     }
 }
 
-void BNO055::get_quaternion(BNO055_QUATERNION_TypeDef *qua)
+void BNO055::get_quaternion(BNO055_UINT16_VEC4_TypeDef *raw)
 {
     int16_t x,y,z,w;
     
@@ -96,13 +96,18 @@ void BNO055::get_quaternion(BNO055_QUATERNION_TypeDef *qua)
     y = dt[5] << 8 | dt[4];
     z = dt[7] << 8 | dt[6];
     
-    qua->x = (double)x / (1 << 14);
-    qua->y = (double)y / (1 << 14);
-    qua->z = (double)z / (1 << 14);
-    qua->w = (double)w / (1 << 14);
+    // qua->x = (double)x / (1 << 14);
+    // qua->y = (double)y / (1 << 14);
+    // qua->z = (double)z / (1 << 14);
+    // qua->w = (double)w / (1 << 14);
+
+    raw->x = x;
+    raw->y = y;
+    raw->z = z;
+    raw->w = w;
 }
 
-void BNO055::get_acc(BNO055_ACC_TypeDef *acc) {
+void BNO055::get_acc(BNO055_UINT16_VEC4_TypeDef *raw) {
     uint8_t ms2_or_mg;
     int16_t x,y,z;
 
@@ -121,18 +126,22 @@ void BNO055::get_acc(BNO055_ACC_TypeDef *acc) {
     x = dt[1] << 8 | dt[0];
     y = dt[3] << 8 | dt[2];
     z = dt[5] << 8 | dt[4];
-    if (ms2_or_mg) {
-        acc->x = (double)x;
-        acc->y = (double)y;
-        acc->z = (double)z;
-    } else {
-        acc->x = (double)x / 100.0;
-        acc->y = (double)y / 100.0;
-        acc->z = (double)z / 100.0;
-    }    
+    // if (ms2_or_mg) {
+    //     acc->x = (double)x;
+    //     acc->y = (double)y;
+    //     acc->z = (double)z;
+    // } else {
+    //     acc->x = (double)x / 100.0;
+    //     acc->y = (double)y / 100.0;
+    //     acc->z = (double)z / 100.0;
+    // }
+
+    raw->x = x;
+    raw->y = y;
+    raw->z = z;
 }
 
-void BNO055::get_gyro(BNO055_GYRO_TypeDef *gyr)
+void BNO055::get_gyro(BNO055_UINT16_VEC4_TypeDef *raw)
 {
     uint8_t dps_or_rps;
     int16_t x,y,z;
@@ -152,15 +161,19 @@ void BNO055::get_gyro(BNO055_GYRO_TypeDef *gyr)
     x = dt[1] << 8 | dt[0];
     y = dt[3] << 8 | dt[2];
     z = dt[5] << 8 | dt[4];
-    if(dps_or_rps) {
-        gyr->x = (double)x / 900.0;
-        gyr->y = (double)y / 900.0;
-        gyr->z = (double)z / 900.0;
-    } else {
-        gyr->x = (double)x / 16.0;
-        gyr->y = (double)y / 16.0;
-        gyr->z = (double)z / 16.0;        
-    }
+    // if(dps_or_rps) {
+    //     gyr->x = (double)x / 900.0;
+    //     gyr->y = (double)y / 900.0;
+    //     gyr->z = (double)z / 900.0;
+    // } else {
+    //     gyr->x = (double)x / 16.0;
+    //     gyr->y = (double)y / 16.0;
+    //     gyr->z = (double)z / 16.0;        
+    // }
+
+    raw->x = x;
+    raw->y = y;
+    raw->z = z;
 }
 
 void BNO055::get_linear_accel(BNO055_LIN_ACC_TypeDef *la)
@@ -192,6 +205,26 @@ void BNO055::get_linear_accel(BNO055_LIN_ACC_TypeDef *la)
         la->y = (double)y / 100.0;
         la->z = (double)z / 100.0;
     }
+}
+
+void BNO055::get_imu_data(BNO055_UINT16_VEC3_TypeDef & acc, BNO055_UINT16_VEC3_TypeDef & gyr, BNO055_UINT16_VEC4_TypeDef & quat)
+{
+    select_page(0);
+    dt[0] = BNO055_GYR_X_LSB;
+    _i2c.write(chip_addr, dt, 1, true);
+    _i2c.read(chip_addr, dt, 32, false);
+    acc.x = dt[1] << 8 | dt[0];
+    acc.y = dt[3] << 8 | dt[2];
+    acc.z = dt[5] << 8 | dt[4];
+
+    gyr.x = dt[13] << 8 | dt[12];
+    gyr.y = dt[15] << 8 | dt[14];
+    gyr.z = dt[17] << 8 | dt[16];
+
+    quat.x = dt[25] << 8 | dt[24];
+    quat.y = dt[27] << 8 | dt[26];
+    quat.z = dt[29] << 8 | dt[28];
+    quat.w = dt[31] << 8 | dt[30];
 }
 
 void BNO055::get_gravity(BNO055_GRAVITY_TypeDef *gr)
@@ -351,7 +384,7 @@ void BNO055::initialize (void)
 #if defined(TARGET_STM32L152RE)
     _i2c.frequency(100000);
 #else
-    _i2c.frequency(400000);
+    _i2c.frequency( 400000 );//400000);
 #endif
     page_flag = 0xff;
     select_page(0);
