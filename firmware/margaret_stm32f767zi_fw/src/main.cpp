@@ -63,21 +63,16 @@ void publishIMUData()
     BNO055_UINT16_VEC3_TypeDef acceleration;
     BNO055_UINT16_VEC4_TypeDef orientation;
 
-    imu.get_imu_data(acceleration, angular_rates, orientation);
+    imu.get_imu_data(&acceleration, &angular_rates, &orientation);
 
     // Store header info (timestamp and sequence no.)
     for(int i=0; i<4; ++i)
     {
         bno055_raw_imu_msg.data[3-i] = 0xFF & (timestamp.sec >> 8*i);
-    }
-    for(int i=0; i<4; ++i)
-    {
         bno055_raw_imu_msg.data[7-i] = 0xFF & (timestamp.nsec >> 8*i);
-    }
-    for(int i=0; i<4; ++i)
-    {
         bno055_raw_imu_msg.data[11-i] = 0xFF & (imu_messages_published >> 8*i);
     }
+
     // Store accelerations
     bno055_raw_imu_msg.data[12] = 0xFF & (acceleration.x >> 8);
     bno055_raw_imu_msg.data[13] = 0xFF & acceleration.x;
@@ -186,11 +181,7 @@ int main()
 
         if(event_flags.get() & (1UL<<2))
         {
-            ros::Time start = nh.now();
             publishIMUData();
-            ros::Time end = nh.now();
-            pc.printf("IMU read took %f s\n", end.toSec()-start.toSec());
-
             event_flags.clear(1UL<<2);
         }
 

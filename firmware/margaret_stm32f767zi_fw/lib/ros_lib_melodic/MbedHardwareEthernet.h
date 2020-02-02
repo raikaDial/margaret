@@ -63,6 +63,8 @@ class MbedHardwareEthernet
             {
                 pc.printf("Socket connect failed: %d", error);
             }
+
+            t.start(); // Start timer.
         }
 
         ///////////////////////////////////////////////////////////////////////////
@@ -108,6 +110,9 @@ class MbedHardwareEthernet
         }
 
         unsigned long time() { return HAL_GetTick(); }
+        unsigned long time_us() { return t.read_us(); }
+
+
 
     private:
         EthernetInterface* m_eth;
@@ -115,6 +120,8 @@ class MbedHardwareEthernet
         SocketAddress* m_server;
 
         CircularBuffer<uint8_t, RX_BUFF_SIZE> m_buff;
+
+        Timer t;
 };
 
 #endif // ROS_MBED_HARDWARE_ETHERNET_H_INCLUDED

@@ -8,6 +8,8 @@
 // ********** //
 
 extern Serial pc;
+extern DigitalOut led1;
+extern DigitalOut led2;
 
 
 Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, uint8_t ID)
@@ -22,7 +24,6 @@ Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, uint8_t ID)
         m_intensities[i] = 0;
     }
 
-    m_laserscan_idx = 0;
     m_laserscan_ready = 0;
     m_laserscan_start = 1;
 
@@ -31,6 +32,10 @@ Xv11Lidar::Xv11Lidar(PinName tx, PinName rx, PinName pwm, uint8_t ID)
     //  [avg motor rpm (4 bytes)][distance meas (2*NUM_VALS_LASERSCAN bytes)][intensity meas (2*NUM_VALS_LASERSCAN bytes)]
     m_laserscan_raw_msg.data_length = 2*NUM_VALS_LASERSCAN+9;
     m_laserscan_raw_msg.data = new uint16_t[m_laserscan_raw_msg.data_length];
+    for(int i=0; i<m_laserscan_raw_msg.data_length; ++i)
+    {
+        m_laserscan_raw_msg.data[i] = 0;
+    }
 
     // Start looking for the start of the packet
     m_lidar_serial.attach(this, &Xv11Lidar::rxISR, Serial::RxIrq);
@@ -65,7 +70,6 @@ void Xv11Lidar::update() {
             {
                 m_starting_angle = current_angle;
                 m_laserscan_start = 0;
-                storeLaserscanPacketHeader();
             }
 
             // Calculate the speed of the motor. Value reported by Neato LIDAR is RPM*64.
@@ -81,58 +85,36 @@ void Xv11Lidar::update() {
             // if(m_ID == 1)
             //     pc.printf("ID: %d, RPM: %f, PWM: %f\n", m_ID, m_motor_rpm, pwm);
             m_motor_pwm.write(pwm);
-            //m_motor_pwm.write(m_motor_controller.compute());
 
-            // Determine the index of the current data
-            //pc.printf("Curr: %d start: %d\n", current_angle, m_starting_angle);
             int idx = current_angle - m_starting_angle;
             while(idx < 0) idx += 360;
 
-            if(idx >= NUM_VALS_LASERSCAN) // We've missed the ending packet for this cycle and overshot;
+            if(idx >= NUM_VALS_LASERSCAN) // We've missed the ending packet for this cycle and overshot
             {
-                while(m_laserscan_idx < NUM_VALS_LASERSCAN)
-                {
-                    m_ranges[m_laserscan_idx] = 0;
-                    m_intensities[m_laserscan_idx] = 0;
-                    ++m_laserscan_idx;
-                }
-
-                //pc.printf("Overshot packet\n");
+                led2 = !led2;
                 publishLaserScan();
-
                 // Create new laserscan with current packet.
                 m_starting_angle = current_angle;
-                m_laserscan_start = 0;
-                storeLaserscanPacketHeader();
+                m_laserscan_start_timestamp = nh.now();
+                idx = 0;
             }
-            else
+
+            // Now process the current packet.
+            for(int i=0; i<N_DATA_QUADS; ++i)
             {
-                //pc.printf("idx: %d\n", idx);
-                while((idx - m_laserscan_idx) > 1 ) // If we dropped a packet fill previous values with 0.
-                {
-                    m_ranges[m_laserscan_idx] = 0;
-                    m_intensities[m_laserscan_idx] = 0;
-                    ++m_laserscan_idx;
-                    //pc.printf("Dropped idx: %d\n", m_laserscan_idx);                     
-                }
+                uint16_t distance, intensity;
+                processData(i, distance, intensity);
+                // Modulo here just to protect us from going out of bounds.
+                // m_ranges[(idx+i)%NUM_VALS_LASERSCAN] = distance;
+                // m_intensities[(idx+i)%NUM_VALS_LASERSCAN] = intensity;
+                m_ranges[(idx+i)] = distance;
+                m_intensities[(idx+i)] = intensity;
+            }
 
-                // Now process the current packet.
-                for(int i=0; i<N_DATA_QUADS; ++i)
-                {
-                    uint16_t distance, intensity;
-                    processData(i, distance, intensity);
-                    m_ranges[m_laserscan_idx] = distance;
-                    m_intensities[m_laserscan_idx] = intensity;
-                    
-                    ++m_laserscan_idx;
-                    //pc.printf("Packet idx: %d\n", m_laserscan_idx);   
-
-                    if(m_laserscan_idx == (NUM_VALS_LASERSCAN-1))
-                    {
-                        //pc.printf("Publish laserscan\n");
-                        publishLaserScan();
-                    }
-                }
+            if(idx == NUM_VALS_LASERSCAN-4)
+            {
+                led1 = !led1;
+                publishLaserScan();
             }
         }
     }
@@ -204,26 +186,35 @@ void Xv11Lidar::processData(uint16_t num_quad, uint16_t & distance, uint16_t & i
 
 void Xv11Lidar::publishLaserScan()
 {
+    // Copy over header information
+    m_laserscan_raw_msg.data[0] = (uint16_t) (m_laserscan_start_timestamp.sec >> 16);
+    m_laserscan_raw_msg.data[1] = (uint16_t) (0xFFFF & m_laserscan_start_timestamp.sec);
+    m_laserscan_raw_msg.data[2] = (uint16_t) (m_laserscan_start_timestamp.nsec >> 16);
+    m_laserscan_raw_msg.data[3] = (uint16_t) (0xFFFF & m_laserscan_start_timestamp.nsec);
+    m_laserscan_raw_msg.data[4] = (uint16_t) (m_num_scans_rxd >> 16);
+    m_laserscan_raw_msg.data[5] = (uint16_t) (0xFFFF & m_num_scans_rxd);
+    m_laserscan_raw_msg.data[6] = m_starting_angle;
+
     // Compute average motor RPM and store in array
     float motor_rpm_avg = m_motor_rpm_sum/m_num_good_readings;
     m_motor_rpm_sum=0;
     m_num_good_readings=0;
     uint32_t motor_rpm_avg_bytes = *reinterpret_cast<uint32_t*>(&motor_rpm_avg);
-    m_laserscan_raw_msg.data[8] = (uint16_t) (motor_rpm_avg_bytes >> 16);
-    m_laserscan_raw_msg.data[9] = (uint16_t) (0xFFFF & motor_rpm_avg_bytes);
+    m_laserscan_raw_msg.data[7] = (uint16_t) (motor_rpm_avg_bytes >> 16);
+    m_laserscan_raw_msg.data[8] = (uint16_t) (0xFFFF & motor_rpm_avg_bytes);
 
     // Copy ranges and intensities to message
     for(int i=0; i<NUM_VALS_LASERSCAN; ++i)
     {
-        m_laserscan_raw_msg.data[10+i] = m_ranges[i];
-        m_laserscan_raw_msg.data[10+NUM_VALS_LASERSCAN+i] = m_intensities[i];
+        m_laserscan_raw_msg.data[9+i] = m_ranges[i];
+        m_laserscan_raw_msg.data[9+NUM_VALS_LASERSCAN+i] = m_intensities[i];
+        m_ranges[i] = 0;
+        m_intensities[i] = 0;
     }
 
-    m_laserscan_idx = 0;
     m_laserscan_start = 1;
     m_laserscan_ready = 1;
     m_num_scans_rxd++;
-    //pc.printf("Laserscan published.");
 }
 
 void Xv11Lidar::rxISR(void)
@@ -258,17 +249,4 @@ void Xv11Lidar::rxISR(void)
             event_flags.set(1UL<<(m_ID-1));
         }
     }
-}
-
-void Xv11Lidar::storeLaserscanPacketHeader()
-{
-    ros::Time timestamp = nh.now();
-    m_laserscan_raw_msg.data[0] = (uint16_t) (timestamp.sec >> 16);
-    m_laserscan_raw_msg.data[1] = (uint16_t) (0xFFFF & timestamp.sec);
-    m_laserscan_raw_msg.data[2] = (uint16_t) (timestamp.nsec >> 16);
-    m_laserscan_raw_msg.data[3] = (uint16_t) (0xFFFF & timestamp.nsec);
-    m_laserscan_raw_msg.data[4] = (uint16_t) (m_num_scans_rxd >> 16);
-    m_laserscan_raw_msg.data[5] = (uint16_t) (0xFFFF & m_num_scans_rxd);
-    m_laserscan_raw_msg.data[6] = (uint16_t) (m_starting_angle >> 16);
-    m_laserscan_raw_msg.data[7] = (uint16_t) (0xFFFF & m_starting_angle);
 }

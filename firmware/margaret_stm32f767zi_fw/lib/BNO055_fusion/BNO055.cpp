@@ -108,18 +108,18 @@ void BNO055::get_quaternion(BNO055_UINT16_VEC4_TypeDef *raw)
 }
 
 void BNO055::get_acc(BNO055_UINT16_VEC4_TypeDef *raw) {
-    uint8_t ms2_or_mg;
+    //uint8_t ms2_or_mg;
     int16_t x,y,z;
 
     select_page(0);
-    dt[0] = BNO055_UNIT_SEL;
-    _i2c.write(chip_addr, dt, 1, true);
-    _i2c.read(chip_addr, dt, 1, false);
-    if (dt[0] & 0x01) {
-        ms2_or_mg = 1; // mg
-    } else {
-        ms2_or_mg = 0; // m/s*s
-    }
+    // dt[0] = BNO055_UNIT_SEL;
+    // _i2c.write(chip_addr, dt, 1, true);
+    // _i2c.read(chip_addr, dt, 1, false);
+    // if (dt[0] & 0x01) {
+    //     ms2_or_mg = 1; // mg
+    // } else {
+    //     ms2_or_mg = 0; // m/s*s
+    // }
     dt[0] = BNO055_ACC_X_LSB;
     _i2c.write(chip_addr, dt, 1, true);
     _i2c.read(chip_addr, dt, 6, false);
@@ -143,18 +143,18 @@ void BNO055::get_acc(BNO055_UINT16_VEC4_TypeDef *raw) {
 
 void BNO055::get_gyro(BNO055_UINT16_VEC4_TypeDef *raw)
 {
-    uint8_t dps_or_rps;
+    //uint8_t dps_or_rps;
     int16_t x,y,z;
     
     select_page(0);
-    dt[0] = BNO055_UNIT_SEL;
-    _i2c.write(chip_addr, dt, 1, true);
-    _i2c.read(chip_addr, dt, 1, false);
-    if(dt[0] & 0x02) {
-        dps_or_rps = 1; // Radians per second
-    } else {
-        dps_or_rps = 0; // Degrees per second
-    }
+    // dt[0] = BNO055_UNIT_SEL;
+    // _i2c.write(chip_addr, dt, 1, true);
+    // _i2c.read(chip_addr, dt, 1, false);
+    // if(dt[0] & 0x02) {
+    //     dps_or_rps = 1; // Radians per second
+    // } else {
+    //     dps_or_rps = 0; // Degrees per second
+    // }
     dt[0] = BNO055_GYR_X_LSB;
     _i2c.write(chip_addr, dt, 1, true);
     _i2c.read(chip_addr, dt, 6, false);
@@ -207,24 +207,24 @@ void BNO055::get_linear_accel(BNO055_LIN_ACC_TypeDef *la)
     }
 }
 
-void BNO055::get_imu_data(BNO055_UINT16_VEC3_TypeDef & acc, BNO055_UINT16_VEC3_TypeDef & gyr, BNO055_UINT16_VEC4_TypeDef & quat)
+void BNO055::get_imu_data(BNO055_UINT16_VEC3_TypeDef *acc, BNO055_UINT16_VEC3_TypeDef *gyr, BNO055_UINT16_VEC4_TypeDef *quat)
 {
     select_page(0);
-    dt[0] = BNO055_GYR_X_LSB;
+    dt[0] = BNO055_ACC_X_LSB;;
     _i2c.write(chip_addr, dt, 1, true);
     _i2c.read(chip_addr, dt, 32, false);
-    acc.x = dt[1] << 8 | dt[0];
-    acc.y = dt[3] << 8 | dt[2];
-    acc.z = dt[5] << 8 | dt[4];
+    acc->x = dt[1] << 8 | dt[0];
+    acc->y = dt[3] << 8 | dt[2];
+    acc->z = dt[5] << 8 | dt[4];
 
-    gyr.x = dt[13] << 8 | dt[12];
-    gyr.y = dt[15] << 8 | dt[14];
-    gyr.z = dt[17] << 8 | dt[16];
+    gyr->x = dt[13] << 8 | dt[12];
+    gyr->y = dt[15] << 8 | dt[14];
+    gyr->z = dt[17] << 8 | dt[16];
 
-    quat.x = dt[25] << 8 | dt[24];
-    quat.y = dt[27] << 8 | dt[26];
-    quat.z = dt[29] << 8 | dt[28];
-    quat.w = dt[31] << 8 | dt[30];
+    quat->x = dt[25] << 8 | dt[24];
+    quat->y = dt[27] << 8 | dt[26];
+    quat->z = dt[29] << 8 | dt[28];
+    quat->w = dt[31] << 8 | dt[30];
 }
 
 void BNO055::get_gravity(BNO055_GRAVITY_TypeDef *gr)

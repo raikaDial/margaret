@@ -1,0 +1,21 @@
+<launch>
+
+    <!-- Begin TCP Socket Interface to Base Machine Microcontroller  -->
+    <node pkg="rosserial_server" type="socket_node" name="rosserial_server"/>
+    <node pkg="rosserial_python" type="message_info_service.py" name="rosserial_message_info"/>
+
+    <!-- Spin up Raw IMU Data Parser -->
+    <node pkg="margaret_bmi" type="bno055RawToImu_node" name="bno055RawToImu_node"/>
+
+    <!-- Spin up Raw LIDAR Data Parsers -->
+    <node pkg="margaret_bmi" type="xv11RawToLaserScan_node" name="xv11RawToLaserScan_node_1" output="screen">
+        <remap from="scan_raw" to="scan_raw_1"/>
+        <remap from="scan" to="scan_1"/>
+        <param name="frame_id" type="string" value="laser_link_1"/>
+    </node>
+    <node pkg="margaret_bmi" type="xv11RawToLaserScan_node" name="xv11RawToLaserScan_node_2">
+        <remap from="scan_raw" to="scan_raw_2"/>
+        <remap from="scan" to="scan_2"/>
+        <param name="frame_id" type="string" value="laser_link_2"/>
+    </node>
+</launch>

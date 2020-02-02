@@ -26,7 +26,7 @@ extern ros::NodeHandle nh;
 extern EventFlags event_flags;
 
 // Number of measurements per LaserScan packet. Must be a multiple of N_DATA_QUADS.
-const int NUM_VALS_LASERSCAN = 24; //360;
+const int NUM_VALS_LASERSCAN = 48; //360;
 
 extern ros::NodeHandle nh;
 
@@ -89,8 +89,8 @@ class Xv11Lidar {
         void update(); // Compiles LaserScan packets.
         
         // Used for sending the lidar's data to the pc
+        ros::Time m_laserscan_start_timestamp; // When we received the first packet in the current LaserScan
         std_msgs::UInt16MultiArray m_laserscan_raw_msg;
-        int m_laserscan_idx;
         uint8_t m_laserscan_ready;
         uint8_t m_laserscan_start;
         
@@ -131,7 +131,6 @@ class Xv11Lidar {
         uint8_t validatePacket();
         void processData(uint16_t num_quad, uint16_t & distance, uint16_t & intensity);
         void publishLaserScan();
-        void storeLaserscanPacketHeader();
         
 }; // end class Xv11Lidar
 

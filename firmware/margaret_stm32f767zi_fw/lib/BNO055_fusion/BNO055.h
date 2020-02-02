@@ -236,7 +236,7 @@ public:
     /** Get gyro, accel, and fused quaternion data all at once
      * @param double type of 3D data address
      */ 
-    void get_imu_data(BNO055_UINT16_VEC3_TypeDef & acc, BNO055_UINT16_VEC3_TypeDef & gyr, BNO055_UINT16_VEC4_TypeDef & quat);
+    void get_imu_data(BNO055_UINT16_VEC3_TypeDef *acc, BNO055_UINT16_VEC3_TypeDef *gyr, BNO055_UINT16_VEC4_TypeDef *quat);
 
     /** Get Chip temperature data both Acc & Gyro
      * @param int8_t type of data address
@@ -333,7 +333,7 @@ protected:
     DigitalOut _res;
 
 private:
-    char     dt[10];      // working buffer
+    char     dt[32];      // working buffer
     uint8_t  chip_addr;
     uint8_t  chip_mode;
     uint8_t  ready_flag;
